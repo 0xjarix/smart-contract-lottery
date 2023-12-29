@@ -26,13 +26,13 @@ pragma solidity ^0.8.18;
 
 import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-
+import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 /**
  * @title A sample Raffle Contract
  * @dev Implements Chainlink VRFv2
  */
 
-contract Raffle is VRFConsumerBaseV2 {
+contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     // custom error messages
     error Raffle__NotEnoughEthSent();
     error Raffle__NotEnoughTimePassed();
@@ -69,7 +69,7 @@ contract Raffle is VRFConsumerBaseV2 {
     // events
     event EnteredRaffle(address indexed player);
     event PickedWinner(address indexed winner);
-
+    event RequestedRaffleWinner(uint256 indexed requestId);
     // constructor
     constructor(
         uint256 entranceFee,
@@ -116,11 +116,11 @@ contract Raffle is VRFConsumerBaseV2 {
     function checkUpkeep(
         bytes memory /* checkData */
     )
-        internal
-        view
+        public
+        view override
         returns (bool upkeepNeeded, bytes memory /* performData */)
     {
-        bool timeHasPassed = block.timestamp - s_lastTimeStamp >= i_interval;
+        bool timeHasPassed = (block.timestamp - s_lastTimeStamp) > i_interval;
         bool isOpen = s_raffleState == RaffleState.OPEN;
         bool hasPlayers = s_players.length > 0;
         bool hasBalance = address(this).balance > 0;
@@ -131,7 +131,7 @@ contract Raffle is VRFConsumerBaseV2 {
     // 1. Get a random number
     // 2. Use the random number to pick a player
     // 3. Be automatically called
-    function performUpkeep(bytes memory /* performData */) external {
+    function performUpkeep(bytes memory /* performData */) external override {
         (bool upkeepNeeded, ) = checkUpkeep("");
         if (!upkeepNeeded)
             revert Raffle__UpkeepNotNeed(
@@ -146,13 +146,14 @@ contract Raffle is VRFConsumerBaseV2 {
 
         // 1. Request the RNG
         // 2. Get a random number
-        i_vrfCoordinator.requestRandomWords(
+        uint256 requestId = i_vrfCoordinator.requestRandomWords(
             i_gasLane, // gas lane
             i_subscriptionId, // subscription ID that we funded with LINK in order to make this request
             REQUEST_CONFIRMATIONS, // number of block confirmations for this random number to be considered good
             i_callbackGasLimit, // To make sure we don't overspend on this call
             NUM_WORDS // number of random numbers we want
         );
+        emit RequestedRaffleWinner(requestId);
     }
 
     // CEI: Checks-Effects-Interactions
@@ -178,7 +179,28 @@ contract Raffle is VRFConsumerBaseV2 {
     }
 
     // Getters
-    function getEntranceFee() public view returns (uint256) {
+    function getEntranceFee() external view returns (uint256) {
         return i_entranceFee;
+    }
+
+    function getRaffleState() external view returns (RaffleState) {
+        return s_raffleState;
+    }
+
+    function getPlayer(
+        uint256 indexOfPlayer
+    ) external view returns (address payable) {
+        return s_players[indexOfPlayer];
+    }
+
+    function getRecentWinner() external view returns (address) {
+        return s_recentWinner;
+    }
+    function getLengthOfPlayers() external view returns (uint256) {
+        return s_players.length;
+    }
+
+    function getLastTimeStamp() external view returns (uint256) {
+        return s_lastTimeStamp;
     }
 }
